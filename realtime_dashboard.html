@@ -1,0 +1,646 @@
+{% extends "base.html" %}
+
+{% block title %}Real-time Detection Dashboard{% endblock %}
+
+{% block extra_head %}
+<style>
+    .priority-critical { border-left: 4px solid #dc3545; }
+    .priority-high { border-left: 4px solid #fd7e14; }
+    .priority-medium { border-left: 4px solid #ffc107; }
+    .priority-low { border-left: 4px solid #6c757d; }
+    
+    .detection-card {
+        transition: all 0.3s ease;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .detection-card:hover {
+        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        transform: translateY(-2px);
+    }
+    
+    .risk-indicator {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        margin-right: 8px;
+    }
+    
+    .risk-critical { background-color: #dc3545; }
+    .risk-high { background-color: #fd7e14; }
+    .risk-medium { background-color: #ffc107; }
+    .risk-low { background-color: #28a745; }
+    
+    .alert-panel {
+        max-height: 400px;
+        overflow-y: auto;
+    }
+    
+    .metric-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+    
+    .metric-value {
+        font-size: 2.5rem;
+        font-weight: bold;
+        margin: 10px 0;
+    }
+    
+    .status-online { 
+        color: #28a745; 
+        animation: pulse 2s infinite;
+    }
+    
+    .status-offline { color: #dc3545; }
+    
+    @keyframes pulse {
+        0% { opacity: 1; }
+        50% { opacity: 0.5; }
+        100% { opacity: 1; }
+    }
+    
+    .chart-container {
+        position: relative;
+        height: 300px;
+        margin: 20px 0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center">
+            <h1 class="display-5 fw-bold">
+                <i class="fas fa-tachometer-alt me-3" style="color: var(--primary-color);"></i>
+                Real-time Detection Dashboard
+            </h1>
+            <div class="d-flex align-items-center">
+                <span class="badge bg-success me-2" id="system-status">
+                    <i class="fas fa-circle status-online"></i> System Online
+                </span>
+                <span class="text-muted" id="last-updated">
+                    Last updated: Loading...
+                </span>
+            </div>
+        </div>
+        <hr class="mt-3 mb-4">
+    </div>
+</div>
+
+<!-- Real-time Metrics -->
+<div class="row mb-4">
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card detection-card priority-critical">
+            <div class="card-body text-center">
+                <i class="fas fa-shield-alt fa-3x text-danger mb-3"></i>
+                <h5 class="card-title">Fraud Detected</h5>
+                <div class="metric-value text-danger" id="fraud-count">0</div>
+                <small class="text-muted">Last 24 hours</small>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card detection-card priority-high">
+            <div class="card-body text-center">
+                <i class="fas fa-user-times fa-3x text-warning mb-3"></i>
+                <h5 class="card-title">High Risk Customers</h5>
+                <div class="metric-value text-warning" id="churn-count">0</div>
+                <small class="text-muted">Require attention</small>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card detection-card priority-medium">
+            <div class="card-body text-center">
+                <i class="fas fa-comment-dots fa-3x text-info mb-3"></i>
+                <h5 class="card-title">Negative Sentiment</h5>
+                <div class="metric-value text-info" id="sentiment-count">0</div>
+                <small class="text-muted">Recent feedback</small>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card detection-card priority-low">
+            <div class="card-body text-center">
+                <i class="fas fa-chart-line fa-3x text-success mb-3"></i>
+                <h5 class="card-title">Total Processed</h5>
+                <div class="metric-value text-success" id="total-processed">0</div>
+                <small class="text-muted">All detections</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Real-time Detection Charts -->
+<div class="row mb-4">
+    <div class="col-lg-4 mb-3">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Fraud Detection Status
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="fraudChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4 mb-3">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-users me-2"></i>
+                    Customer Risk Distribution
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="churnChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4 mb-3">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-heart me-2"></i>
+                    Sentiment Analysis
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="sentimentChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Critical Alerts Panel -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-bell me-2"></i>
+                    Critical Alerts
+                </h5>
+                <div>
+                    <button class="btn btn-sm btn-outline-primary" onclick="refreshAlerts()">
+                        <i class="fas fa-sync-alt"></i> Refresh
+                    </button>
+                    <span class="badge bg-danger" id="alert-count">0</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="alert-panel" id="alerts-container">
+                    <div class="text-center text-muted py-4">
+                        <i class="fas fa-spinner fa-spin fa-2x mb-3"></i>
+                        <p>Loading alerts...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Real-time Testing Panel -->
+<div class="row mb-4">
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="card-title mb-0">🔍 Test Fraud Detection</h6>
+            </div>
+            <div class="card-body">
+                <form id="fraud-test-form">
+                    <div class="mb-2">
+                        <input type="number" class="form-control form-control-sm" 
+                               placeholder="Amount" name="Amount" step="0.01" required>
+                    </div>
+                    <div class="mb-2">
+                        <input type="number" class="form-control form-control-sm" 
+                               placeholder="Time" name="Time" required>
+                    </div>
+                    <div class="row">
+                        <div class="col-6">
+                            <input type="number" class="form-control form-control-sm" 
+                                   placeholder="V1" name="V1" step="0.01" required>
+                        </div>
+                        <div class="col-6">
+                            <input type="number" class="form-control form-control-sm" 
+                                   placeholder="V2" name="V2" step="0.01" required>
+                        </div>
+                    </div>
+                    <div class="row mt-2">
+                        <div class="col-4">
+                            <input type="number" class="form-control form-control-sm" 
+                                   placeholder="V3" name="V3" step="0.01" required>
+                        </div>
+                        <div class="col-4">
+                            <input type="number" class="form-control form-control-sm" 
+                                   placeholder="V4" name="V4" step="0.01" required>
+                        </div>
+                        <div class="col-4">
+                            <input type="number" class="form-control form-control-sm" 
+                                   placeholder="V5" name="V5" step="0.01" required>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-danger btn-sm mt-2 w-100">
+                        <i class="fas fa-search"></i> Test Detection
+                    </button>
+                </form>
+                <div id="fraud-result" class="mt-2"></div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="card-title mb-0">👤 Test Churn Prediction</h6>
+            </div>
+            <div class="card-body">
+                <form id="churn-test-form">
+                    <div class="mb-2">
+                        <input type="text" class="form-control form-control-sm" 
+                               placeholder="Customer ID" name="CustomerId" required>
+                    </div>
+                    <div class="row">
+                        <div class="col-6">
+                            <input type="number" class="form-control form-control-sm" 
+                                   placeholder="Credit Score" name="CreditScore" required>
+                        </div>
+                        <div class="col-6">
+                            <input type="number" class="form-control form-control-sm" 
+                                   placeholder="Age" name="Age" required>
+                        </div>
+                    </div>
+                    <div class="row mt-2">
+                        <div class="col-6">
+                            <input type="number" class="form-control form-control-sm" 
+                                   placeholder="Tenure" name="Tenure" required>
+                        </div>
+                        <div class="col-6">
+                            <input type="number" class="form-control form-control-sm" 
+                                   placeholder="Balance" name="Balance" step="0.01" required>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-warning btn-sm mt-2 w-100">
+                        <i class="fas fa-user-check"></i> Test Prediction
+                    </button>
+                </form>
+                <div id="churn-result" class="mt-2"></div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="card-title mb-0">💬 Test Sentiment Analysis</h6>
+            </div>
+            <div class="card-body">
+                <form id="sentiment-test-form">
+                    <div class="mb-2">
+                        <textarea class="form-control form-control-sm" 
+                                  placeholder="Enter text to analyze..." 
+                                  name="text" rows="3" required></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-info btn-sm w-100">
+                        <i class="fas fa-heart"></i> Analyze Sentiment
+                    </button>
+                </form>
+                <div id="sentiment-result" class="mt-2"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+let fraudChart, churnChart, sentimentChart;
+let refreshInterval;
+
+document.addEventListener('DOMContentLoaded', function() {
+    initializeCharts();
+    loadDashboardData();
+    
+    // Set up auto-refresh every 30 seconds
+    refreshInterval = setInterval(loadDashboardData, 30000);
+    
+    // Set up test forms
+    setupTestForms();
+});
+
+function initializeCharts() {
+    // Fraud Detection Chart
+    const fraudCtx = document.getElementById('fraudChart').getContext('2d');
+    fraudChart = new Chart(fraudCtx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Safe', 'Suspicious', 'Fraud'],
+            datasets: [{
+                data: [85, 12, 3],
+                backgroundColor: ['#28a745', '#ffc107', '#dc3545']
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false
+        }
+    });
+    
+    // Churn Prediction Chart
+    const churnCtx = document.getElementById('churnChart').getContext('2d');
+    churnChart = new Chart(churnCtx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Loyal', 'At Risk', 'High Risk'],
+            datasets: [{
+                data: [70, 20, 10],
+                backgroundColor: ['#28a745', '#ffc107', '#dc3545']
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false
+        }
+    });
+    
+    // Sentiment Analysis Chart
+    const sentimentCtx = document.getElementById('sentimentChart').getContext('2d');
+    sentimentChart = new Chart(sentimentCtx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Positive', 'Neutral', 'Negative'],
+            datasets: [{
+                data: [45, 35, 20],
+                backgroundColor: ['#28a745', '#6c757d', '#dc3545']
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false
+        }
+    });
+}
+
+async function loadDashboardData() {
+    try {
+        // Load dashboard summary
+        const response = await fetch('/api/detection/dashboard/summary');
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            updateMetrics(data.data);
+            updateSystemStatus(data.data);
+        }
+        
+        // Load critical alerts
+        await loadCriticalAlerts();
+        
+        updateLastUpdated();
+        
+    } catch (error) {
+        console.error('Failed to load dashboard data:', error);
+        updateSystemStatus({ system_status: 'degraded' });
+    }
+}
+
+function updateMetrics(data) {
+    const stats = data.performance_stats || {};
+    const alerts = data.recent_alerts || {};
+    
+    document.getElementById('fraud-count').textContent = stats.fraud_detected || 0;
+    document.getElementById('churn-count').textContent = stats.high_risk_customers || 0;
+    document.getElementById('sentiment-count').textContent = alerts.high || 0;
+    document.getElementById('total-processed').textContent = stats.total_processed || 0;
+}
+
+function updateSystemStatus(data) {
+    const statusElement = document.getElementById('system-status');
+    const iconElement = statusElement.querySelector('i');
+    
+    if (data.system_status === 'operational') {
+        statusElement.className = 'badge bg-success me-2';
+        statusElement.innerHTML = '<i class="fas fa-circle status-online"></i> System Online';
+    } else {
+        statusElement.className = 'badge bg-danger me-2';
+        statusElement.innerHTML = '<i class="fas fa-circle status-offline"></i> System Degraded';
+    }
+}
+
+async function loadCriticalAlerts() {
+    try {
+        const response = await fetch('/api/detection/alerts/critical?hours=24');
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            displayAlerts(data.data.alerts);
+            document.getElementById('alert-count').textContent = data.data.total_count;
+        }
+        
+    } catch (error) {
+        console.error('Failed to load alerts:', error);
+        document.getElementById('alerts-container').innerHTML = `
+            <div class="alert alert-warning">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                Failed to load alerts
+            </div>
+        `;
+    }
+}
+
+function displayAlerts(alerts) {
+    const container = document.getElementById('alerts-container');
+    
+    if (!alerts || alerts.length === 0) {
+        container.innerHTML = `
+            <div class="text-center text-muted py-4">
+                <i class="fas fa-check-circle fa-2x mb-3 text-success"></i>
+                <p>No critical alerts</p>
+            </div>
+        `;
+        return;
+    }
+    
+    const alertsHtml = alerts.map(alert => `
+        <div class="alert alert-${alert.color} alert-dismissible priority-${alert.priority.toLowerCase()} mb-2">
+            <div class="d-flex align-items-center">
+                <i class="${alert.icon} me-3"></i>
+                <div class="flex-grow-1">
+                    <strong>${alert.type.toUpperCase()}</strong>
+                    <span class="risk-indicator risk-${alert.risk_level.toLowerCase()}"></span>
+                    ${alert.risk_level}
+                    <br>
+                    <small class="text-muted">
+                        ID: ${alert.id} | ${alert.timestamp}
+                        ${alert.action_required ? ' | <strong>Action Required</strong>' : ''}
+                    </small>
+                </div>
+                <div class="text-end">
+                    <span class="badge bg-light text-dark">${alert.risk_score}</span>
+                </div>
+            </div>
+        </div>
+    `).join('');
+    
+    container.innerHTML = alertsHtml;
+}
+
+function setupTestForms() {
+    // Fraud Detection Test
+    document.getElementById('fraud-test-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const formData = new FormData(e.target);
+        const data = Object.fromEntries(formData.entries());
+        
+        // Convert to numbers
+        Object.keys(data).forEach(key => {
+            data[key] = parseFloat(data[key]);
+        });
+        
+        try {
+            const response = await fetch('/api/detection/fraud/detect', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            });
+            
+            const result = await response.json();
+            displayTestResult('fraud-result', result);
+            
+        } catch (error) {
+            displayTestError('fraud-result', error);
+        }
+    });
+    
+    // Churn Prediction Test
+    document.getElementById('churn-test-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const formData = new FormData(e.target);
+        const data = Object.fromEntries(formData.entries());
+        
+        // Convert numeric fields
+        ['CreditScore', 'Age', 'Tenure', 'Balance'].forEach(field => {
+            if (data[field]) data[field] = parseFloat(data[field]);
+        });
+        
+        try {
+            const response = await fetch('/api/detection/customer/churn', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            });
+            
+            const result = await response.json();
+            displayTestResult('churn-result', result);
+            
+        } catch (error) {
+            displayTestError('churn-result', error);
+        }
+    });
+    
+    // Sentiment Analysis Test
+    document.getElementById('sentiment-test-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const formData = new FormData(e.target);
+        const data = Object.fromEntries(formData.entries());
+        
+        try {
+            const response = await fetch('/api/detection/sentiment/analyze', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            });
+            
+            const result = await response.json();
+            displayTestResult('sentiment-result', result);
+            
+        } catch (error) {
+            displayTestError('sentiment-result', error);
+        }
+    });
+}
+
+function displayTestResult(containerId, result) {
+    const container = document.getElementById(containerId);
+    
+    if (result.status === 'success') {
+        const data = result.data;
+        let resultHtml = '<div class="alert alert-success alert-sm mt-2">';
+        
+        if (data.is_fraud !== undefined) {
+            resultHtml += `
+                <strong>Fraud: ${data.is_fraud ? 'YES' : 'NO'}</strong><br>
+                Probability: ${(data.fraud_probability * 100).toFixed(1)}%<br>
+                Risk: ${data.risk_level}
+            `;
+        } else if (data.will_churn !== undefined) {
+            resultHtml += `
+                <strong>Will Churn: ${data.will_churn ? 'YES' : 'NO'}</strong><br>
+                Probability: ${(data.churn_probability * 100).toFixed(1)}%<br>
+                Risk: ${data.risk_level}
+            `;
+        } else if (data.sentiment !== undefined) {
+            resultHtml += `
+                <strong>Sentiment: ${data.sentiment.toUpperCase()}</strong><br>
+                Confidence: ${(data.confidence * 100).toFixed(1)}%<br>
+                Attention: ${data.requires_attention ? 'YES' : 'NO'}
+            `;
+        }
+        
+        resultHtml += '</div>';
+        container.innerHTML = resultHtml;
+        
+    } else {
+        displayTestError(containerId, result.message);
+    }
+}
+
+function displayTestError(containerId, error) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = `
+        <div class="alert alert-danger alert-sm mt-2">
+            <strong>Error:</strong> ${error}
+        </div>
+    `;
+}
+
+function updateLastUpdated() {
+    document.getElementById('last-updated').textContent = 
+        `Last updated: ${new Date().toLocaleTimeString()}`;
+}
+
+function refreshAlerts() {
+    loadCriticalAlerts();
+}
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', function() {
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+    }
+});
+</script>
+{% endblock %}
